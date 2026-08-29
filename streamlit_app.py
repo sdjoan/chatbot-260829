@@ -2,7 +2,6 @@ import re
 
 import streamlit as st
 from openai import OpenAI
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="스포츠 용품 상담 챗봇", page_icon="🏸", layout="centered")
 
@@ -94,7 +93,7 @@ def render_kakao_share(text: str, key: str):
         return
 
     safe_text = text.replace("\\", "\\\\").replace("`", "\\`").replace("</", "<\\/")
-    components.html(
+    st.iframe(
         f"""
         <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"></script>
         <button id="kakao-share-{key}" style="
