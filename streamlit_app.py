@@ -1,49 +1,192 @@
 import streamlit as st
 from openai import OpenAI
+import streamlit.components.v1 as components
 
-SYSTEM_PROMPT = """당신은 10년 경력의 스포츠 용품 전문 상담사입니다.
-- 사용자가 어떤 운동을 하는지, 실력 수준(입문/중급/상급), 예산, 사용 목적(취미/시합용)을 파악하기 전까지는 섣불리 특정 제품을 추천하지 말고 먼저
-되물어보세요.
-- 정보가 충분해지면 카테고리(브랜드보다는 종류·스펙 중심)와 이유를 함께 제안하세요.
-- 가격대는 여러 옵션(가성비/중급/프리미엄)으로 나눠 설명하세요.
-- 모르는 최신 가격·재고는 추측하지 말고, 매장/공식몰 확인을 권하세요.
-- 친절하고 간결한 한국어로 답하세요."""
+st.set_page_config(page_title="스포츠 용품 상담 챗봇", page_icon="🏸", layout="centered")
 
-st.title("스포츠 용품 상담 챗봇")
+st.title("🏸 스포츠 용품 상담 챗봇")
 st.write(
     "운동 종목, 실력, 예산을 알려주시면 어떤 스포츠 용품이 맞을지 상담해드려요. "
-    "이용하려면 OpenAI API 키가 필요합니다."
+    "음성으로 물어보셔도 되고, 상담 결과는 카카오톡으로 공유할 수 있어요."
 )
+
+# --------------------------------------------------
+# API KEY
+# --------------------------------------------------
 
 openai_api_key = st.text_input("OpenAI API Key", type="password")
 if not openai_api_key:
     st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-    client = OpenAI(api_key=openai_api_key)
+    st.stop()
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+client = OpenAI(api_key=openai_api_key)
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# --------------------------------------------------
+# 상담 설정 (사이드바)
+# --------------------------------------------------
 
-    if prompt := st.chat_input("어떤 운동 용품을 찾으세요? (예: 초보 러닝화 추천해줘)"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+st.sidebar.header("🏸 상담 설정")
 
-        api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
-            {"role": m["role"], "content": m["content"]}
-            for m in st.session_state.messages
-        ]
+sport = st.sidebar.selectbox(
+    "운동 종목",
+    ["러닝", "헬스/웨이트", "등산/트레킹", "축구/풋살", "농구", "배드민턴/테니스", "수영", "자전거", "골프", "기타"],
+)
+level = st.sidebar.selectbox("실력 수준", ["입문", "중급", "상급"])
+budget = st.sidebar.select_slider(
+    "예산대", options=["가성비", "중급", "프리미엄", "상관없음"], value="상관없음"
+)
 
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=api_messages,
-            stream=True,
+st.sidebar.divider()
+st.sidebar.header("💬 카카오톡 공유 (선택)")
+kakao_js_key = st.sidebar.text_input(
+    "카카오 JavaScript 키",
+    type="password",
+    help="카카오 디벨로퍼스(developers.kakao.com)에서 앱 생성 후 발급받은 JavaScript 키를 입력하세요. "
+    "비워두면 카카오톡 공유 버튼이 비활성화됩니다.",
+)
+app_url = st.sidebar.text_input(
+    "이 앱의 배포 URL",
+    value="https://chatbot-sd-2608.streamlit.app/",
+    help="카카오톡 공유 메시지에 포함될 링크입니다.",
+)
+
+# --------------------------------------------------
+# AI 역할 설정
+# --------------------------------------------------
+
+SYSTEM_PROMPT = f"""당신은 10년 경력의 스포츠 용품 전문 상담사입니다.
+
+사용자가 미리 알려준 정보:
+- 운동 종목: {sport}
+- 실력 수준: {level}
+- 예산대: {budget}
+
+상담 원칙:
+1. 위 정보로 충분하지 않으면(사용 목적, 신체조건, 선호 브랜드 등) 가장 중요한 질문 1~2개만 먼저 하세요.
+2. 정보가 충분해지면 브랜드보다는 종류·스펙 중심으로 카테고리를 추천하고, 이유를 함께 설명하세요.
+3. 가격대는 가성비/중급/프리미엄 등 여러 옵션으로 나눠 설명하세요.
+4. 모르는 최신 가격·재고·단종 여부는 추측하지 말고, 매장/공식몰 확인을 권하세요.
+5. 답변은 친절하고 간결한 한국어로, 가능하면 아래 형식을 사용하세요.
+
+### 🔍 파악된 니즈
+### 💡 추천 카테고리
+### ⚠️ 확인할 점
+### 🎯 정리
+"""
+
+# --------------------------------------------------
+# 대화 기록
+# --------------------------------------------------
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# --------------------------------------------------
+# 카카오톡 공유 버튼 렌더링 함수
+# --------------------------------------------------
+
+
+def render_kakao_share(text: str, key: str):
+    if not kakao_js_key:
+        st.caption("카카오 JavaScript 키를 입력하면 이 답변을 카카오톡으로 공유할 수 있어요.")
+        return
+
+    safe_text = text.replace("\\", "\\\\").replace("`", "\\`").replace("</", "<\\/")
+    components.html(
+        f"""
+        <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"></script>
+        <button id="kakao-share-{key}" style="
+            padding:8px 14px;border-radius:8px;border:1px solid #FEE500;
+            background:#FEE500;color:#191919;font-weight:600;cursor:pointer;">
+            💬 카카오톡으로 공유
+        </button>
+        <script>
+        if (!Kakao.isInitialized()) {{
+            Kakao.init("{kakao_js_key}");
+        }}
+        document.getElementById("kakao-share-{key}").onclick = function() {{
+            Kakao.Share.sendDefault({{
+                objectType: 'text',
+                text: `{safe_text}`.slice(0, 200),
+                link: {{
+                    mobileWebUrl: "{app_url}",
+                    webUrl: "{app_url}",
+                }},
+            }});
+        }};
+        </script>
+        """,
+        height=50,
+    )
+
+
+# --------------------------------------------------
+# 기존 대화 + 생성된 이미지 출력
+# --------------------------------------------------
+
+for i, message in enumerate(st.session_state.messages):
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if message["role"] == "assistant":
+            if message.get("image_url"):
+                st.image(message["image_url"])
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🖼 추천 상품 이미지로 보기", key=f"img_btn_{i}"):
+                    with st.spinner("이미지 생성 중..."):
+                        image = client.images.generate(
+                            model="dall-e-3",
+                            prompt=f"다음 스포츠 용품 추천 내용을 보여주는 사실적인 제품 사진: {message['content']}",
+                            size="1024x1024",
+                            n=1,
+                        )
+                        st.session_state.messages[i]["image_url"] = image.data[0].url
+                    st.rerun()
+            with col2:
+                render_kakao_share(message["content"], key=str(i))
+
+# --------------------------------------------------
+# 음성 입력 (선택)
+# --------------------------------------------------
+
+st.divider()
+audio_value = st.audio_input("🎙 음성으로 질문하기 (선택)")
+
+voice_prompt = None
+if audio_value is not None:
+    with st.spinner("음성 인식 중..."):
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_value,
         )
+        voice_prompt = transcript.text
+    st.caption(f"인식된 질문: {voice_prompt}")
 
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+# --------------------------------------------------
+# 텍스트 입력
+# --------------------------------------------------
+
+text_prompt = st.chat_input("어떤 운동 용품을 찾으세요? (예: 초보 러닝화 추천해줘)")
+
+prompt = voice_prompt or text_prompt
+
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
+        {"role": m["role"], "content": m["content"]} for m in st.session_state.messages
+    ]
+
+    stream = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.5,
+        messages=api_messages,
+        stream=True,
+    )
+
+    with st.chat_message("assistant"):
+        response = st.write_stream(stream)
+    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.rerun()
