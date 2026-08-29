@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 from openai import OpenAI
 import streamlit.components.v1 as components
@@ -134,13 +136,20 @@ for i, message in enumerate(st.session_state.messages):
             with col1:
                 if st.button("🖼 추천 상품 이미지로 보기", key=f"img_btn_{i}"):
                     with st.spinner("이미지 생성 중..."):
-                        image = client.images.generate(
-                            model="dall-e-3",
-                            prompt=f"다음 스포츠 용품 추천 내용을 보여주는 사실적인 제품 사진: {message['content']}",
-                            size="1024x1024",
-                            n=1,
-                        )
-                        st.session_state.messages[i]["image_url"] = image.data[0].url
+                        # 마크다운 제목·이모지를 걷어내고 짧게 잘라서 안전한 이미지 프롬프트로 사용
+                        clean_text = re.sub(r"[#*`>_🔍💡⚠️🎯]", "", message["content"])
+                        clean_text = " ".join(clean_text.split())[:300]
+                        image_prompt = f"스포츠 용품 매장 진열 사진, 다음 추천 내용에 어울리는 실제 제품들: {clean_text}"
+                        try:
+                            image = client.images.generate(
+                                model="dall-e-3",
+                                prompt=image_prompt,
+                                size="1024x1024",
+                                n=1,
+                            )
+                            st.session_state.messages[i]["image_url"] = image.data[0].url
+                        except Exception as e:
+                            st.error(f"이미지를 생성하지 못했어요: {e}")
                     st.rerun()
             with col2:
                 render_kakao_share(message["content"], key=str(i))
