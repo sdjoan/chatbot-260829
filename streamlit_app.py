@@ -1,3 +1,4 @@
+import hashlib
 import re
 
 import streamlit as st
@@ -101,6 +102,8 @@ for i, message in enumerate(st.session_state.messages):
         if message["role"] == "assistant":
             if message.get("image_url"):
                 st.image(message["image_url"])
+            if message.get("image_error"):
+                st.error(f"이미지를 생성하지 못했어요: {message['image_error']}")
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🖼 추천 상품 이미지로 보기", key=f"img_btn_{i}"):
@@ -117,8 +120,9 @@ for i, message in enumerate(st.session_state.messages):
                                 n=1,
                             )
                             st.session_state.messages[i]["image_url"] = image.data[0].url
+                            st.session_state.messages[i]["image_error"] = None
                         except Exception as e:
-                            st.error(f"이미지를 생성하지 못했어요: {e}")
+                            st.session_state.messages[i]["image_error"] = str(e)
                     st.rerun()
             with col2:
                 render_kakao_share(message["content"], key=str(i))
@@ -132,13 +136,18 @@ audio_value = st.audio_input("🎙 음성으로 질문하기 (선택)")
 
 voice_prompt = None
 if audio_value is not None:
-    with st.spinner("음성 인식 중..."):
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_value,
-        )
-        voice_prompt = transcript.text
-    st.caption(f"인식된 질문: {voice_prompt}")
+    # audio_input 위젯 값은 재실행 간에도 유지되므로, 새로 녹음된 것인지
+    # 해시로 확인해서 같은 녹음이 다른 버튼 클릭 때마다 재전송되지 않게 한다.
+    audio_hash = hashlib.md5(audio_value.getvalue()).hexdigest()
+    if audio_hash != st.session_state.get("last_audio_hash"):
+        st.session_state.last_audio_hash = audio_hash
+        with st.spinner("음성 인식 중..."):
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_value,
+            )
+            voice_prompt = transcript.text
+        st.caption(f"인식된 질문: {voice_prompt}")
 
 # --------------------------------------------------
 # 텍스트 입력
