@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import re
 
@@ -100,8 +101,8 @@ for i, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if message["role"] == "assistant":
-            if message.get("image_url"):
-                st.image(message["image_url"])
+            if message.get("image_b64"):
+                st.image(base64.b64decode(message["image_b64"]))
             if message.get("image_error"):
                 st.error(f"이미지를 생성하지 못했어요: {message['image_error']}")
             col1, col2 = st.columns(2)
@@ -114,12 +115,12 @@ for i, message in enumerate(st.session_state.messages):
                         image_prompt = f"스포츠 용품 매장 진열 사진, 다음 추천 내용에 어울리는 실제 제품들: {clean_text}"
                         try:
                             image = client.images.generate(
-                                model="dall-e-3",
+                                model="gpt-image-2",
                                 prompt=image_prompt,
                                 size="1024x1024",
                                 n=1,
                             )
-                            st.session_state.messages[i]["image_url"] = image.data[0].url
+                            st.session_state.messages[i]["image_b64"] = image.data[0].b64_json
                             st.session_state.messages[i]["image_error"] = None
                         except Exception as e:
                             st.session_state.messages[i]["image_error"] = str(e)
