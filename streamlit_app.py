@@ -38,17 +38,10 @@ budget = st.sidebar.select_slider(
 )
 
 st.sidebar.divider()
-st.sidebar.header("💬 카카오톡 공유 (선택)")
-kakao_js_key = st.sidebar.text_input(
-    "카카오 JavaScript 키",
-    type="password",
-    help="카카오 디벨로퍼스(developers.kakao.com)에서 앱 생성 후 발급받은 JavaScript 키를 입력하세요. "
-    "비워두면 카카오톡 공유 버튼이 비활성화됩니다.",
-)
 app_url = st.sidebar.text_input(
     "이 앱의 배포 URL",
     value="https://chatbot-sd-2608.streamlit.app/",
-    help="카카오톡 공유 메시지에 포함될 링크입니다.",
+    help="카카오톡 공유용 텍스트에 포함될 링크입니다.",
 )
 
 # --------------------------------------------------
@@ -88,37 +81,14 @@ if "messages" not in st.session_state:
 
 
 def render_kakao_share(text: str, key: str):
-    if not kakao_js_key:
-        st.caption("카카오 JavaScript 키를 입력하면 이 답변을 카카오톡으로 공유할 수 있어요.")
-        return
-
-    safe_text = text.replace("\\", "\\\\").replace("`", "\\`").replace("</", "<\\/")
-    st.iframe(
-        f"""
-        <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"></script>
-        <button id="kakao-share-{key}" style="
-            padding:8px 14px;border-radius:8px;border:1px solid #FEE500;
-            background:#FEE500;color:#191919;font-weight:600;cursor:pointer;">
-            💬 카카오톡으로 공유
-        </button>
-        <script>
-        if (!Kakao.isInitialized()) {{
-            Kakao.init("{kakao_js_key}");
-        }}
-        document.getElementById("kakao-share-{key}").onclick = function() {{
-            Kakao.Share.sendDefault({{
-                objectType: 'text',
-                text: `{safe_text}`.slice(0, 200),
-                link: {{
-                    mobileWebUrl: "{app_url}",
-                    webUrl: "{app_url}",
-                }},
-            }});
-        }};
-        </script>
-        """,
-        height=50,
-    )
+    # 카카오 JS SDK는 Streamlit이 이 버튼을 iframe(srcdoc)으로 렌더링하는 과정에서
+    # 출처(origin)가 없어져 도메인 인증이 항상 실패한다. 대신 복사해서
+    # 카카오톡에 붙여넣는 방식으로 공유한다.
+    clean_text = re.sub(r"[#*`]", "", text).strip()
+    share_message = f"{clean_text[:500]}\n\n📱 더 보기: {app_url}"
+    with st.expander("💬 카카오톡으로 공유하기"):
+        st.caption("아래 내용을 복사해서 카카오톡 채팅방에 붙여넣으세요.")
+        st.code(share_message, language=None)
 
 
 # --------------------------------------------------
